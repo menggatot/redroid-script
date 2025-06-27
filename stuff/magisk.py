@@ -81,17 +81,19 @@ on property:init.svc.zygote=stopped
         self.fetch_latest_release()
         
         # Use size verification instead of MD5
-        local_size = 0
-        if os.path.isfile(self.dl_file_name):
-            local_size = os.path.getsize(self.dl_file_name)
-            
-        while not os.path.isfile(self.dl_file_name) or local_size != self.expected_size:
+        while True:
+            local_size = 0
+            if os.path.isfile(self.dl_file_name):
+                local_size = os.path.getsize(self.dl_file_name)
+                
+            if os.path.isfile(self.dl_file_name) and local_size == self.expected_size:
+                break
+                
             if os.path.isfile(self.dl_file_name):
                 os.remove(self.dl_file_name)
                 print_color("File size mismatch, redownloading...", bcolors.YELLOW)
             
-            download_file(self.dl_link, self.dl_file_name)
-            local_size = os.path.getsize(self.dl_file_name)   
+            download_file(self.dl_link, self.dl_file_name)   
 
     def copy(self):
         if os.path.exists(self.copy_dir):
