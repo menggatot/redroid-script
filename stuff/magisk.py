@@ -2,14 +2,15 @@ import gzip
 import os
 import shutil
 import re
+import requests
+import json
 from stuff.general import General
 from tools.helper import bcolors, download_file, host, print_color, run, get_download_dir
 
 class Magisk(General):
     download_loc = get_download_dir()
-    dl_link = "https://web.archive.org/web/20230718224206if_/https://objects.githubusercontent.com/github-production-release-asset-2e65be/514574759/50ec2f91-174b-4918-8587-04e847458bfd?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIWNJYAX4CSVEH53A%2F20230718%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20230718T224206Z&X-Amz-Expires=300&X-Amz-Signature=ee54e872b4d3c1388601941e85b2fcf84d5e06968618271ea2f5e3ea5947d4e1&X-Amz-SignedHeaders=host&actor_id=0&key_id=0&repo_id=514574759&response-content-disposition=attachment%3B%20filename%3Dapp-debug.apk&response-content-type=application%2Fvnd.android.package-archive"
     dl_file_name = os.path.join(download_loc, "magisk.apk")
-    act_md5 = "ec98dcee84a47785dc551eb7c465b25f"
+    github_api_url = "https://api.github.com/repos/1q23lyc45/KitsuneMagisk/releases/latest"
     extract_to = "/tmp/magisk_unpack"
     copy_dir = "./magisk"
     magisk_dir = os.path.join(copy_dir, "system", "etc", "init", "magisk")
@@ -54,9 +55,43 @@ on property:init.svc.zygote=stopped
     exec u:r:su:s0 root root -- /sbin/magisk --auto-selinux --zygote-restart
     """.format(arch=machine[1])
 
+    def fetch_latest_release(self):
+        """Fetch latest release info from GitHub API"""
+        print_color("Fetching latest Magisk release info...", bcolors.GREEN)
+        response = requests.get(self.github_api_url, timeout=10)
+        response.raise_for_status()
+        
+        release_data = response.json()
+        
+        # Find app-debug.apk in assets
+        for asset in release_data['assets']:
+            if asset['name'] == 'app-debug.apk':
+                self.dl_link = asset['browser_download_url']
+                self.expected_size = asset['size']
+                print_color(f"Found latest release: {release_data['tag_name']}", bcolors.GREEN)
+                print_color(f"File size: {self.expected_size} bytes", bcolors.GREEN)
+                return
+        
+        raise ValueError("app-debug.apk not found in latest release")
+    
     def download(self):
         print_color("Downloading latest Magisk-Delta now .....", bcolors.GREEN)
-        super().download()   
+        
+        # Fetch latest release info from GitHub API
+        self.fetch_latest_release()
+        
+        # Use size verification instead of MD5
+        local_size = 0
+        if os.path.isfile(self.dl_file_name):
+            local_size = os.path.getsize(self.dl_file_name)
+            
+        while not os.path.isfile(self.dl_file_name) or local_size != self.expected_size:
+            if os.path.isfile(self.dl_file_name):
+                os.remove(self.dl_file_name)
+                print_color("File size mismatch, redownloading...", bcolors.YELLOW)
+            
+            download_file(self.dl_link, self.dl_file_name)
+            local_size = os.path.getsize(self.dl_file_name)   
 
     def copy(self):
         if os.path.exists(self.copy_dir):
